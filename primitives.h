@@ -60,7 +60,7 @@ bool intersect(Ray const & ray, AABB const & aabb) {
     return tmax > std::max(tmin, 0.0f);
 }
 
-bool intersect(Ray const & ray, Tri const & tri, float * t, math::Vec3f * bcoords = nullptr) {
+bool intersect(Ray const & ray, Tri const & tri, float * t_ptr = nullptr, math::Vec3f * bcoords_ptr = nullptr) {
     math::Vec3f v0 = tri.b - tri.a;
     math::Vec3f v1 = tri.c - tri.a;
     math::Vec3f normal = v1.cross(v0);
@@ -70,10 +70,13 @@ bool intersect(Ray const & ray, Tri const & tri, float * t, math::Vec3f * bcoord
     float cosine = normal.dot(ray.dir);
     if (std::abs(cosine) < std::numeric_limits<float>::epsilon()) return false;
 
-    *t = -normal.dot(ray.origin - tri.a) / cosine;
+    float t = -normal.dot(ray.origin - tri.a) / cosine;
+    if (t_ptr != nullptr) {
+        *t_ptr = t;
+    }
 
-    if (*t < ray.tmin || ray.tmax < *t) return false;
-    math::Vec3f v2 = (ray.origin - tri.a) + *t * ray.dir;
+    if (t < ray.tmin || ray.tmax < t) return false;
+    math::Vec3f v2 = (ray.origin - tri.a) + t * ray.dir;
 
     float d00 = v0.dot(v0);
     float d01 = v0.dot(v1);
@@ -82,16 +85,16 @@ bool intersect(Ray const & ray, Tri const & tri, float * t, math::Vec3f * bcoord
     float d21 = v2.dot(v1);
     float denom = d00 * d11 - d01 * d01;
 
-    math::Vec3f uvw;
-    uvw[0] = (d11 * d20 - d01 * d21) / denom;
-    uvw[1] = (d00 * d21 - d01 * d20) / denom;
-    uvw[2] = 1.0f - uvw[0] - uvw[1];
+    math::Vec3f bcoords;
+    bcoords[0] = (d11 * d20 - d01 * d21) / denom;
+    bcoords[1] = (d00 * d21 - d01 * d20) / denom;
+    bcoords[2] = 1.0f - bcoords[0] - bcoords[1];
 
-    if (bcoords != nullptr) {
-        *bcoords = uvw;
+    if (bcoords_ptr != nullptr) {
+        *bcoords_ptr = bcoords;
     }
 
-    return 0.0f <= uvw[0] && uvw[0] <= 1.0f
-        && 0.0f <= uvw[1] && uvw[1] <= 1.0f
-        && 0.0f <= uvw[2] && uvw[2] <= 1.0f;
+    return 0.0f <= bcoords[0] && bcoords[0] <= 1.0f
+        && 0.0f <= bcoords[1] && bcoords[1] <= 1.0f
+        && 0.0f <= bcoords[2] && bcoords[2] <= 1.0f;
 }
