@@ -11,7 +11,7 @@ struct Arguments {
     std::string in_view;
     std::string image;
     std::string in_mesh;
-    std::string out_image;
+    std::string out_prefix;
 };
 
 Arguments parse_args(int argc, char **argv) {
@@ -19,7 +19,7 @@ Arguments parse_args(int argc, char **argv) {
     args.set_exit_on_error(true);
     args.set_nonopt_maxnum(4);
     args.set_nonopt_minnum(4);
-    args.set_usage("Usage: " + std::string(argv[0]) + " [OPTS] IN_VIEW IMAGE IN_MESH OUT_IMAGE");
+    args.set_usage("Usage: " + std::string(argv[0]) + " [OPTS] IN_VIEW IMAGE IN_MESH OUT_PREFIX");
     args.set_description("TODO");
     args.parse(argc, argv);
 
@@ -27,7 +27,7 @@ Arguments parse_args(int argc, char **argv) {
     conf.in_view = args.get_nth_nonopt(0);
     conf.image = args.get_nth_nonopt(1);
     conf.in_mesh = args.get_nth_nonopt(2);
-    conf.out_image = args.get_nth_nonopt(3);
+    conf.out_prefix = args.get_nth_nonopt(3);
 
     for (util::ArgResult const* i = args.next_option();
          i != 0; i = args.next_option()) {
@@ -49,6 +49,11 @@ int main(int argc, char **argv) {
         std::cerr << "\tCould not load mesh: "<< e.what() << std::endl;
         std::exit(EXIT_FAILURE);
     }
+    if (!mesh->has_vertex_colors()) {
+        std::cerr << "\tMesh has no vertex colors" << std::endl;
+        std::exit(EXIT_FAILURE);
+    }
+
     mve::View::Ptr view;
     try {
         view = mve::View::create(conf.in_view);
@@ -64,10 +69,12 @@ int main(int argc, char **argv) {
     mve::View::ImageProxy const * proxy = view->get_image_proxy(conf.image);
     mve::CameraInfo const & camera = view->get_camera();
 
+    mesh->ensure_normals(false, true);
     std::vector<unsigned int> const & mfaces = mesh->get_faces();
     std::vector<std::size_t> faces(mfaces.begin(), mfaces.end());
     std::vector<math::Vec3f> const & vertices = mesh->get_vertices();
     std::vector<math::Vec4f> const & colors = mesh->get_vertex_colors();
+    std::vector<math::Vec3f> const & normals = mesh->get_vertex_normals();
 
     BVHTree bvhtree(faces, vertices);
 
@@ -79,10 +86,11 @@ int main(int argc, char **argv) {
     camera.fill_cam_to_world_rot(*c2w_rot);
 
     util::WallTimer timer;
-    mve::ByteImage::Ptr image = mve::ByteImage::create(proxy->width, proxy->height, 3);
+    mve::ByteImage::Ptr uvmap = mve::ByteImage::create(proxy->width, proxy->height, 3);
+    mve::ByteImage::Ptr nmap = mve::ByteImage::create(proxy->width, proxy->height, 3);
     #pragma omp parallel for
-    for (int y = 0; y < image->width(); ++y) {
-        for (int x = 0; x < image->width(); ++x) {
+    for (int y = 0; y < uvmap->height(); ++y) {
+        for (int x = 0; x < uvmap->width(); ++x) {
             Ray ray;
             ray.origin = origin;
             math::Vec3f v = invproj * math::Vec3f ((float)x + 0.5f, (float)y + 0.5f, 1.0f);
@@ -92,19 +100,25 @@ int main(int argc, char **argv) {
 
             BVHTree::Hit hit;
             if (bvhtree.intersect(ray, &hit)) {
+                math::Vec3f const & n1 = normals[faces[hit.idx * 3 + 0]];
+                math::Vec3f const & n2 = normals[faces[hit.idx * 3 + 1]];
+                math::Vec3f const & n3 = normals[faces[hit.idx * 3 + 2]];
                 math::Vec4f const & c1 = colors[faces[hit.idx * 3 + 0]];
                 math::Vec4f const & c2 = colors[faces[hit.idx * 3 + 1]];
                 math::Vec4f const & c3 = colors[faces[hit.idx * 3 + 2]];
                 math::Vec3f const & w = hit.bcoords;
                 for (std::size_t c = 0; c < 3; ++c) {
-                    image->at(x, y, c) = 255.0f *
+                    uvmap->at(x, y, c) = 255.0f *
                         math::interpolate(c1[c], c2[c], c3[c], w[0], w[1], w[2]);
+                    nmap->at(x, y, c) = 255.0f * (0.5f +
+                        math::interpolate(n1[c], n2[c], n3[c], w[0], w[1], w[2]) / 2.0f);
                 }
             }
         }
     }
     std::cout << "Raycasting took: " << timer.get_elapsed() << " ms" << std::endl;
 
-    mve::image::save_png_file(image, conf.out_image);
+    mve::image::save_png_file(uvmap, conf.out_prefix + "-uv.png");
+    mve::image::save_png_file(nmap, conf.out_prefix + "-normals.png");
     return EXIT_SUCCESS;
 }

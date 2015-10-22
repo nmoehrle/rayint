@@ -86,9 +86,9 @@ bool intersect(Ray const & ray, Tri const & tri, float * t_ptr = nullptr, math::
     float denom = d00 * d11 - d01 * d01;
 
     math::Vec3f bcoords;
-    bcoords[0] = (d11 * d20 - d01 * d21) / denom;
-    bcoords[1] = (d00 * d21 - d01 * d20) / denom;
-    bcoords[2] = 1.0f - bcoords[0] - bcoords[1];
+    bcoords[1] = (d11 * d20 - d01 * d21) / denom;
+    bcoords[2] = (d00 * d21 - d01 * d20) / denom;
+    bcoords[0] = 1.0f - bcoords[1] - bcoords[2];
 
     if (bcoords_ptr != nullptr) {
         *bcoords_ptr = bcoords;
