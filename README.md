@@ -1,7 +1,7 @@
 Ray Intersection
 -------------------------------------------------------------------------------
-This project offers a header only acceleration structure library including an
-implementations for an BVH- and KD-Tree. Applications may include ray
+This project offers a header only acceleration structure library including
+implementations for a BVH- and KD-Tree. Applications may include ray
 intersection tests or neighest neighbor searches.
 
 As an example application a simple raycasting app for
