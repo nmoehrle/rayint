@@ -51,7 +51,11 @@ private:
 public:
     ~BVHTree();
 
-    /* Constructs the BVH tree using the Surface Area Heuristic.
+    /* Constructs the BVH tree using the Surface Area Heuristic as
+     * published in
+     * "On fast Construction of SAH-based Bounding Volume Hierarchies"
+     * by Ingo Wald (IEEE Symposium on Interactive Ray Tracing 2007)
+     *
      * The mesh should be given as triangle index list and
      * a vector containing the 3D positions. */
     BVHTree(std::vector<std::size_t> const & faces,
