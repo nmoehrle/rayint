@@ -98,10 +98,13 @@ int main(int argc, char **argv) {
     std::vector<math::Vec3f> const & vertices = mesh->get_vertices();
     std::vector<math::Vec4f> const & colors = mesh->get_vertex_colors();
     std::vector<math::Vec3f> const & normals = mesh->get_vertex_normals();
-
-    acc::BVHTree bvhtree(faces, vertices);
     
     util::WallTimer timer;
+    std::cout << "Building BVH from " << faces.size() / 3 << " faces... " << std::flush;
+    acc::BVHTree bvhtree(faces, vertices);
+    std::cout << "done. (Took: " << timer.get_elapsed() << " ms)" << std::endl;
+
+    timer.reset();
     std::cout << "Raycasting... " << std::flush;
     for (mve::View::Ptr view : views) {
         mve::CameraInfo const & camera = view->get_camera();

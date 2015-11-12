@@ -11,6 +11,7 @@
 
 #include <deque>
 #include <stack>
+#include <cassert>
 #include <algorithm>
 
 #include <math/vector.h>
@@ -38,13 +39,19 @@ private:
         Node* right;
         AABB aabb;
         Node(std::size_t first, std::size_t last)
-            : first(first), last(last), left(nullptr), right(nullptr) {}
+            : first(first), last(last), left(nullptr), right(nullptr),
+            aabb({math::Vec3f(inf), math::Vec3f(-inf)}) {}
         bool is_leaf() const {return left == nullptr && right == nullptr;}
     };
     std::vector<std::size_t> indices;
     std::vector<Tri> tris;
 
     Node *root;
+
+    void bsplit(Node * node, std::vector<AABB> const & aabbs,
+        std::deque<Node *> * queue);
+    void ssplit(Node * node, std::vector<AABB> const & aabbs,
+        std::deque<Node *> * queue);
 
     bool intersect(Ray const & ray, Node const * node, Hit * hit) const;
 
@@ -77,12 +84,168 @@ BVHTree::~BVHTree() {
     }
 };
 
+#define NUM_BINS 64
+struct Bin {
+    std::size_t n;
+    AABB aabb;
+};
+
+void BVHTree::bsplit(Node * node, std::vector<AABB> const & aabbs,
+        std::deque<Node *> * queue) {
+    std::size_t n = node->last - node->first;
+
+    std::array<Bin, NUM_BINS> bins;
+    std::array<AABB, NUM_BINS> right_aabbs;
+    std::vector<unsigned char> bin(n);
+
+    float min_cost = std::numeric_limits<float>::infinity();
+    std::pair<std::size_t, unsigned char> split;
+    for (std::size_t d = 0; d < 3; ++d) {
+        float min = node->aabb.min[d];
+        float max = node->aabb.max[d];
+        for (Bin & bin : bins) {
+            bin = {0, {math::Vec3f(inf), math::Vec3f(-inf)}};
+        }
+        for (std::size_t i = node->first; i < node->last; ++i) {
+            AABB const & aabb = aabbs[indices[i]];
+            unsigned char idx = ((mid(aabb, d) - min) / (max - min)) * (NUM_BINS - 1);
+            bins[idx].aabb += aabb;
+            bins[idx].n += 1;
+            bin[i - node->first] = idx;
+        }
+
+        right_aabbs[NUM_BINS - 1] = bins[NUM_BINS - 1].aabb;
+        for (std::size_t i = NUM_BINS - 1; i > 0; --i) {
+            right_aabbs[i - 1] = bins[i - 1].aabb + right_aabbs[i];
+        }
+
+        AABB left_aabb = bins[0].aabb;
+        std::size_t nl = bins[0].n;
+        for (std::size_t idx = 1; idx < NUM_BINS; ++idx) {
+            std::size_t nr = n - nl;
+            float cost = (surface_area(left_aabb) / surface_area(node->aabb) * nl
+            + surface_area(right_aabbs[idx]) / surface_area(node->aabb) * nr);
+            if (cost <= min_cost) {
+                min_cost = cost;
+                split = std::make_pair(d, idx);
+            }
+
+            nl += bins[idx].n;
+            left_aabb += bins[idx].aabb;
+        }
+    }
+
+    if (min_cost < n) {
+        std::size_t d;
+        unsigned char sidx;
+        std::tie(d, sidx) = split;
+
+        float min = node->aabb.min[d];
+        float max = node->aabb.max[d];
+        for (Bin & bin : bins) {
+            bin = {0, {math::Vec3f(inf), math::Vec3f(-inf)}};
+        }
+        for (std::size_t i = node->first; i < node->last; ++i) {
+            AABB const & aabb = aabbs[indices[i]];
+            unsigned char idx = ((mid(aabb, d) - min) / (max - min)) * (NUM_BINS - 1);
+            bins[idx].aabb += aabb;
+            bins[idx].n += 1;
+            bin[i - node->first] = idx;
+        }
+
+        std::size_t l = node->first;
+        std::size_t r = node->last - 1;
+        while (l < r) {
+            if (bin[l - node->first] < sidx) {
+                l += 1;
+                continue;
+            }
+            if (bin[r - node->first] >= sidx) {
+                r -= 1;
+                continue;
+            }
+            std::swap(bin[l - node->first], bin[r - node->first]);
+            std::swap(indices[l], indices[r]);
+        }
+        assert(l == r);
+        std::size_t m = bin[(l&r) - node->first] >= sidx ? (l&r) : (l&r) + 1;
+
+        node->left = new Node(node->first, m);
+        node->right = new Node(m, node->last);
+        for (std::size_t idx = 0; idx < NUM_BINS; ++idx) {
+            if (idx < sidx) {
+                node->left->aabb += bins[idx].aabb;
+            } else {
+                node->right->aabb += bins[idx].aabb;
+            }
+        }
+
+        queue->push_back(node->left);
+        queue->push_back(node->right);
+    }
+}
+
+void BVHTree::ssplit(Node * node, std::vector<AABB> const & aabbs,
+        std::deque<Node *> * queue) {
+    std::size_t n = node->last - node->first;
+
+    float min_cost = std::numeric_limits<float>::infinity();
+    std::pair<std::size_t, std::size_t> split;
+    std::vector<AABB> right_aabbs(n);
+    for (std::size_t d = 0; d < 3; ++d) {
+        std::sort(&indices[node->first], &indices[node->last],
+            [&aabbs, d] (std::size_t first, std::size_t second) -> bool {
+                return mid(aabbs[first], d) < mid(aabbs[second], d)
+                    || (mid(aabbs[first], d) == mid(aabbs[second], d)
+                        && first < second);
+            }
+        );
+
+        right_aabbs[n - 1] = aabbs[indices[node->last - 1]];
+        for (std::size_t i = node->last - 1; i > node->first; --i) {
+            right_aabbs[i - 1 - node->first] = aabbs[indices[i - 1]]
+                + right_aabbs[i - node->first];
+        }
+        node->aabb = right_aabbs[0];
+
+        AABB left_aabb = aabbs[indices[node->first]];
+        for (std::size_t i = node->first + 1; i < node->last; ++i) {
+            std::size_t nl = i - node->first;
+            std::size_t nr = n - nl;
+            float cost = (surface_area(left_aabb) / surface_area(node->aabb) * nl
+            + surface_area(right_aabbs[nl]) / surface_area(node->aabb) * nr);
+            if (cost <= min_cost) {
+                min_cost = cost;
+                split = std::make_pair(d, i);
+            }
+
+            left_aabb += aabbs[indices[i]];
+        }
+    }
+
+    if (min_cost < n) {
+        std::size_t d, i;
+        std::tie(d, i) = split;
+        std::sort(&indices[node->first], &indices[node->last],
+            [&aabbs, d] (std::size_t first, std::size_t second) -> bool {
+                return mid(aabbs[first], d) < mid(aabbs[second], d)
+                    || (mid(aabbs[first], d) == mid(aabbs[second], d)
+                        && first < second);
+            }
+        );
+
+        node->left = new Node(node->first, i);
+        node->right = new Node(i, node->last);
+        queue->push_back(node->left);
+        queue->push_back(node->right);
+    }
+}
+
 BVHTree::BVHTree(std::vector<std::size_t> const & faces,
     std::vector<math::Vec3f> const & vertices) {
     
     std::size_t num_faces = faces.size() / 3;
     std::vector<AABB> aabbs(num_faces);
-    std::vector<AABB> right_aabbs(num_faces);
     std::vector<Tri> ttris(num_faces);
     root = new Node(0, num_faces);
     for (std::size_t i = 0; i < aabbs.size(); ++i) {
@@ -98,61 +261,15 @@ BVHTree::BVHTree(std::vector<std::size_t> const & faces,
         indices[i] = i;
     }
 
-    std::deque<Node*> q;
-    q.push_back(root);
-    while (!q.empty()) {
-        Node *node = q.back(); q.pop_back();
+    std::deque<Node*> queue;
+    queue.push_back(root);
+    while (!queue.empty()) {
+        Node *node = queue.back(); queue.pop_back();
         std::size_t n = node->last - node->first;
-
-        float min_cost = std::numeric_limits<float>::infinity();
-        std::pair<std::size_t, std::size_t> split;
-        for (std::size_t d = 0; d < 3; ++d) {
-            std::sort(&indices[node->first], &indices[node->last],
-                [&aabbs, d] (std::size_t first, std::size_t second) -> bool {
-                    return mid(aabbs[first], d) < mid(aabbs[second], d)
-                        || (mid(aabbs[first], d) == mid(aabbs[second], d)
-                            && first < second);
-                }
-            );
-
-            right_aabbs[node->last - 1] = aabbs[indices[node->last - 1]];
-            for (std::size_t i = node->last - 1; i > node->first; --i) {
-                right_aabbs[i - 1] = aabbs[indices[i - 1]] + right_aabbs[i];
-            }
-            node->aabb = right_aabbs[node->first];
-
-            AABB left_aabb = aabbs[indices[node->first]];
-            for (std::size_t i = node->first + 1; i < node->last; ++i) {
-                std::size_t nl = i - node->first;
-                std::size_t nr = n - nl;
-                float cost = (surface_area(left_aabb) / surface_area(node->aabb) * nl
-                + surface_area(right_aabbs[i]) / surface_area(node->aabb) * nr);
-                if (cost <= min_cost) {
-                    min_cost = cost;
-                    split = std::make_pair(d, i);
-                }
-
-                left_aabb += aabbs[indices[i]];
-            }
-        }
-
-        if (min_cost < n) {
-            std::size_t d, i;
-            std::tie(d, i) = split;
-            if (d != 2) {
-                std::sort(&indices[node->first], &indices[node->last],
-                    [&aabbs, d] (std::size_t first, std::size_t second) -> bool {
-                        return mid(aabbs[first], d) < mid(aabbs[second], d)
-                            || (mid(aabbs[first], d) == mid(aabbs[second], d)
-                                && first < second);
-                    }
-                );
-            }
-
-            node->left = new Node(node->first, i);
-            node->right = new Node(i, node->last);
-            q.push_back(node->left);
-            q.push_back(node->right);
+        if (n > NUM_BINS) {
+            bsplit(node, aabbs, &queue);
+        } else {
+            ssplit(node, aabbs, &queue);
         }
     }
 
