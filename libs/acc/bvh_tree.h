@@ -13,6 +13,8 @@
 #include <stack>
 #include <cassert>
 #include <algorithm>
+#include <atomic>
+#include <thread>
 
 #include <math/vector.h>
 
@@ -48,10 +50,11 @@ private:
 
     Node *root;
 
-    void bsplit(Node * node, std::vector<AABB> const & aabbs,
-        std::deque<Node *> * queue);
-    void ssplit(Node * node, std::vector<AABB> const & aabbs,
-        std::deque<Node *> * queue);
+    std::pair<Node *, Node *> sbsplit(Node * node, std::vector<AABB> const & aabbs);
+    std::pair<Node *, Node *> bsplit(Node * node, std::vector<AABB> const & aabbs);
+    std::pair<Node *, Node *> ssplit(Node * node, std::vector<AABB> const & aabbs);
+    void split(Node *node, std::vector<AABB> const & aabbs,
+        std::atomic<int> * num_threads);
 
     bool intersect(Ray const & ray, Node const * node, Hit * hit) const;
 
@@ -66,7 +69,8 @@ public:
      * The mesh should be given as triangle index list and
      * a vector containing the 3D positions. */
     BVHTree(std::vector<std::size_t> const & faces,
-        std::vector<math::Vec3f> const & vertices);
+        std::vector<math::Vec3f> const & vertices,
+        int max_threads = std::thread::hardware_concurrency());
 
     bool intersect(Ray ray, Hit * hit_ptr) const;
 };
@@ -90,8 +94,44 @@ struct Bin {
     AABB aabb;
 };
 
-void BVHTree::bsplit(Node * node, std::vector<AABB> const & aabbs,
-        std::deque<Node *> * queue) {
+
+void BVHTree::split(Node *node, std::vector<AABB> const & aabbs,
+        std::atomic<int> * num_threads) {
+
+    Node *left, *right;
+    if ((*num_threads -= 1) >= 1) {
+        std::tie(left, right) = sbsplit(node, aabbs);
+        if (left && right) {
+            std::thread other(&BVHTree::split, this, left, std::cref(aabbs), num_threads);
+            split(right, aabbs, num_threads);
+            other.join();
+        }
+    } else {
+        std::deque<Node*> queue;
+        queue.push_back(node);
+        while (!queue.empty()) {
+            Node *node = queue.back(); queue.pop_back();
+            std::tie(left, right) = sbsplit(node, aabbs);
+            if (left && right) {
+                queue.push_back(left);
+                queue.push_back(right);
+            }
+        }
+    }
+}
+
+std::pair<BVHTree::Node *, BVHTree::Node *>
+BVHTree::sbsplit(Node * node, std::vector<AABB> const & aabbs) {
+    std::size_t n = node->last - node->first;
+    if (n > NUM_BINS) {
+        return bsplit(node, aabbs);
+    } else {
+        return ssplit(node, aabbs);
+    }
+}
+
+std::pair<BVHTree::Node *, BVHTree::Node *>
+BVHTree::bsplit(Node * node, std::vector<AABB> const & aabbs) {
     std::size_t n = node->last - node->first;
 
     std::array<Bin, NUM_BINS> bins;
@@ -135,58 +175,57 @@ void BVHTree::bsplit(Node * node, std::vector<AABB> const & aabbs,
         }
     }
 
-    if (min_cost < n) {
-        std::size_t d;
-        unsigned char sidx;
-        std::tie(d, sidx) = split;
+    if (min_cost >= n) return std::make_pair(nullptr, nullptr);
 
-        float min = node->aabb.min[d];
-        float max = node->aabb.max[d];
-        for (Bin & bin : bins) {
-            bin = {0, {math::Vec3f(inf), math::Vec3f(-inf)}};
-        }
-        for (std::size_t i = node->first; i < node->last; ++i) {
-            AABB const & aabb = aabbs[indices[i]];
-            unsigned char idx = ((mid(aabb, d) - min) / (max - min)) * (NUM_BINS - 1);
-            bins[idx].aabb += aabb;
-            bins[idx].n += 1;
-            bin[i - node->first] = idx;
-        }
+    std::size_t d;
+    unsigned char sidx;
+    std::tie(d, sidx) = split;
 
-        std::size_t l = node->first;
-        std::size_t r = node->last - 1;
-        while (l < r) {
-            if (bin[l - node->first] < sidx) {
-                l += 1;
-                continue;
-            }
-            if (bin[r - node->first] >= sidx) {
-                r -= 1;
-                continue;
-            }
-            std::swap(bin[l - node->first], bin[r - node->first]);
-            std::swap(indices[l], indices[r]);
-        }
-        assert(l == r);
-        std::size_t m = bin[(l&r) - node->first] >= sidx ? (l&r) : (l&r) + 1;
-
-        node->left = new Node(node->first, m);
-        node->right = new Node(m, node->last);
-        for (std::size_t idx = 0; idx < NUM_BINS; ++idx) {
-            if (idx < sidx) {
-                node->left->aabb += bins[idx].aabb;
-            } else {
-                node->right->aabb += bins[idx].aabb;
-            }
-        }
-
-        queue->push_back(node->left);
-        queue->push_back(node->right);
+    float min = node->aabb.min[d];
+    float max = node->aabb.max[d];
+    for (Bin & bin : bins) {
+        bin = {0, {math::Vec3f(inf), math::Vec3f(-inf)}};
     }
+    for (std::size_t i = node->first; i < node->last; ++i) {
+        AABB const & aabb = aabbs[indices[i]];
+        unsigned char idx = ((mid(aabb, d) - min) / (max - min)) * (NUM_BINS - 1);
+        bins[idx].aabb += aabb;
+        bins[idx].n += 1;
+        bin[i - node->first] = idx;
+    }
+
+    std::size_t l = node->first;
+    std::size_t r = node->last - 1;
+    while (l < r) {
+        if (bin[l - node->first] < sidx) {
+            l += 1;
+            continue;
+        }
+        if (bin[r - node->first] >= sidx) {
+            r -= 1;
+            continue;
+        }
+        std::swap(bin[l - node->first], bin[r - node->first]);
+        std::swap(indices[l], indices[r]);
+    }
+    assert(l == r);
+    std::size_t m = bin[(l&r) - node->first] >= sidx ? (l&r) : (l&r) + 1;
+
+    node->left = new Node(node->first, m);
+    node->right = new Node(m, node->last);
+    for (std::size_t idx = 0; idx < NUM_BINS; ++idx) {
+        if (idx < sidx) {
+            node->left->aabb += bins[idx].aabb;
+        } else {
+            node->right->aabb += bins[idx].aabb;
+        }
+    }
+
+    return std::make_pair(node->left, node->right);
 }
 
-void BVHTree::ssplit(Node * node, std::vector<AABB> const & aabbs,
-        std::deque<Node *> * queue) {
+std::pair<BVHTree::Node *, BVHTree::Node *>
+BVHTree::ssplit(Node * node, std::vector<AABB> const & aabbs) {
     std::size_t n = node->last - node->first;
 
     float min_cost = std::numeric_limits<float>::infinity();
@@ -223,27 +262,26 @@ void BVHTree::ssplit(Node * node, std::vector<AABB> const & aabbs,
         }
     }
 
-    if (min_cost < n) {
-        std::size_t d, i;
-        std::tie(d, i) = split;
-        std::sort(&indices[node->first], &indices[node->last],
-            [&aabbs, d] (std::size_t first, std::size_t second) -> bool {
-                return mid(aabbs[first], d) < mid(aabbs[second], d)
-                    || (mid(aabbs[first], d) == mid(aabbs[second], d)
-                        && first < second);
-            }
-        );
+    if (min_cost >= n) return std::make_pair(nullptr, nullptr);
 
-        node->left = new Node(node->first, i);
-        node->right = new Node(i, node->last);
-        queue->push_back(node->left);
-        queue->push_back(node->right);
-    }
+    std::size_t d, i;
+    std::tie(d, i) = split;
+    std::sort(&indices[node->first], &indices[node->last],
+        [&aabbs, d] (std::size_t first, std::size_t second) -> bool {
+            return mid(aabbs[first], d) < mid(aabbs[second], d)
+                || (mid(aabbs[first], d) == mid(aabbs[second], d)
+                    && first < second);
+        }
+    );
+
+    node->left = new Node(node->first, i);
+    node->right = new Node(i, node->last);
+    return std::make_pair(node->left, node->right);
 }
 
 BVHTree::BVHTree(std::vector<std::size_t> const & faces,
-    std::vector<math::Vec3f> const & vertices) {
-    
+    std::vector<math::Vec3f> const & vertices, int max_threads) {
+
     std::size_t num_faces = faces.size() / 3;
     std::vector<AABB> aabbs(num_faces);
     std::vector<Tri> ttris(num_faces);
@@ -261,17 +299,8 @@ BVHTree::BVHTree(std::vector<std::size_t> const & faces,
         indices[i] = i;
     }
 
-    std::deque<Node*> queue;
-    queue.push_back(root);
-    while (!queue.empty()) {
-        Node *node = queue.back(); queue.pop_back();
-        std::size_t n = node->last - node->first;
-        if (n > NUM_BINS) {
-            bsplit(node, aabbs, &queue);
-        } else {
-            ssplit(node, aabbs, &queue);
-        }
-    }
+    std::atomic<int> num_threads(max_threads);
+    split(root, aabbs, &num_threads);
 
     tris.resize(ttris.size());
     for (std::size_t i = 0; i < indices.size(); ++i) {
