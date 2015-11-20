@@ -70,7 +70,7 @@ public:
      * a vector containing the 3D positions. */
     BVHTree(std::vector<std::size_t> const & faces,
         std::vector<math::Vec3f> const & vertices,
-        int max_threads = std::thread::hardware_concurrency());
+        int max_threads = 2 * std::thread::hardware_concurrency());
 
     bool intersect(Ray ray, Hit * hit_ptr) const;
 };
@@ -118,6 +118,7 @@ void BVHTree::split(Node *node, std::vector<AABB> const & aabbs,
             }
         }
     }
+    *num_threads += 1;
 }
 
 std::pair<BVHTree::Node *, BVHTree::Node *>
