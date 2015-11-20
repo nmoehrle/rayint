@@ -12,6 +12,7 @@
 #include <util/arguments.h>
 #include <mve/mesh_io_ply.h>
 #include <mve/scene.h>
+#include <future>
 
 #include <acc/bvh_tree.h>
 
@@ -151,12 +152,13 @@ int main(int argc, char **argv) {
                 }
             }
         }
+
         view->set_image(uvmap, conf.out_prefix + "-uv");
         view->set_image(normalmap, conf.out_prefix + "-normals");
         view->set_image(depthmap, conf.out_prefix + "-depth");
-        view->save_view();
+        auto res = std::async(std::launch::async, [view] {view->save_view();});
     }
     std::cout << "done. (Took: " << timer.get_elapsed() << " ms)" << std::endl;
-    
+
     return EXIT_SUCCESS;
 }
