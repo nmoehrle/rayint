@@ -41,6 +41,7 @@ private:
         ID left;
         ID right;
         AABB aabb;
+        Node() : Node(-1, -1) {}
         Node(std::size_t first, std::size_t last)
             : first(first), last(last), left(-1), right(-1),
             aabb({math::Vec3f(inf), math::Vec3f(-inf)}) {}
@@ -51,11 +52,18 @@ private:
     std::vector<Tri> tris;
 
     std::mutex m;
+    std::atomic<std::size_t> num_nodes;
     std::deque<Node> nodes;
     Node::ID create_node(std::size_t first, std::size_t last) {
-        std::lock_guard<std::mutex> lock(m);
-        nodes.emplace_back(first, last);
-        return nodes.size() - 1;
+        Node::ID node_id = num_nodes++;
+        if (node_id >= nodes.size()) {
+            std::lock_guard<std::mutex> lock(m);
+            if (node_id >= nodes.size()) {
+                nodes.resize(nodes.size() + 1024);
+            }
+        }
+        nodes[node_id] = Node(first, last);
+        return node_id;
     }
 
     std::pair<Node::ID, Node::ID> sbsplit(Node::ID node_id, std::vector<AABB> const & aabbs);
@@ -277,14 +285,18 @@ BVHTree::ssplit(Node::ID node_id, std::vector<AABB> const & aabbs) {
 }
 
 BVHTree::BVHTree(std::vector<std::size_t> const & faces,
-    std::vector<math::Vec3f> const & vertices, int max_threads) {
+    std::vector<math::Vec3f> const & vertices, int max_threads) : num_nodes(0) {
 
     std::size_t num_faces = faces.size() / 3;
     std::vector<AABB> aabbs(num_faces);
     std::vector<Tri> ttris(num_faces);
 
+    /* Initialize deque with approximate number of nodes,
+     * assuming two faces per leaf node. */
+    nodes.resize(num_faces);
+
     /* Initialize root node. */
-    nodes.emplace_back(0, num_faces);
+    nodes[num_nodes++] = Node(0, num_faces);
 
     Node & root = nodes[0];
     for (std::size_t i = 0; i < aabbs.size(); ++i) {
