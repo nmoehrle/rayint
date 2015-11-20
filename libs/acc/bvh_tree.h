@@ -120,6 +120,7 @@ void BVHTree::split(Node::ID node, std::vector<AABB> const & aabbs,
             }
         }
     }
+    *num_threads += 1;
 }
 
 std::pair<BVHTree::Node::ID, BVHTree::Node::ID>
