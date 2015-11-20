@@ -320,6 +320,8 @@ BVHTree::BVHTree(std::vector<std::size_t> const & faces,
     for (std::size_t i = 0; i < indices.size(); ++i) {
         tris[i] = ttris[indices[i]];
     }
+
+    nodes.resize(num_nodes);
 }
 
 bool
