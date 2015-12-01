@@ -17,27 +17,30 @@
 
 ACC_NAMESPACE_BEGIN
 
+template <typename Vec3fType>
 struct AABB {
-    math::Vec3f min;
-    math::Vec3f max;
+    Vec3fType min;
+    Vec3fType max;
 };
 
+template <typename Vec3fType>
 struct Tri {
-    math::Vec3f a;
-    math::Vec3f b;
-    math::Vec3f c;
+    Vec3fType a;
+    Vec3fType b;
+    Vec3fType c;
 };
 
+template <typename Vec3fType>
 struct Ray {
-    math::Vec3f origin;
-    math::Vec3f dir;
+    Vec3fType origin;
+    Vec3fType dir;
     float tmin;
     float tmax;
 };
 
-inline
-AABB operator+(AABB const & a, AABB const & b) {
-    AABB aabb;
+template <typename Vec3fType> inline
+AABB<Vec3fType> operator+(AABB<Vec3fType> const & a, AABB<Vec3fType> const & b) {
+    AABB<Vec3fType> aabb;
     for (std::size_t i = 0; i < 3; ++i) {
         aabb.min[i] = std::min(a.min[i], b.min[i]);
         aabb.max[i] = std::max(a.max[i], b.max[i]);
@@ -45,41 +48,45 @@ AABB operator+(AABB const & a, AABB const & b) {
     return aabb;
 }
 
-inline
-void operator+=(AABB & a, AABB const & b) {
-    for (std::size_t i = 0; i < 3; ++i) {
+template <typename Vec3fType> inline
+void operator+=(AABB<Vec3fType> & a, AABB<Vec3fType> const & b) {
+    for (int i = 0; i < 3; ++i) {
         a.min[i] = std::min(a.min[i], b.min[i]);
         a.max[i] = std::max(a.max[i], b.max[i]);
     }
 }
 
-void calculate_aabb(Tri const & tri, AABB * aabb)  {
-    for (std::size_t i = 0; i < 3; ++i) {
+template <typename Vec3fType> inline
+void calculate_aabb(Tri<Vec3fType> const & tri, AABB<Vec3fType> * aabb)  {
+    for (int i = 0; i < 3; ++i) {
         aabb->min[i] = std::min(tri.a[i], std::min(tri.b[i], tri.c[i]));
         aabb->max[i] = std::max(tri.a[i], std::max(tri.b[i], tri.c[i]));
     }
 }
 
-float surface_area(AABB const & aabb) {
+template <typename Vec3fType> inline
+float surface_area(AABB<Vec3fType> const & aabb) {
     float e0 = aabb.max[0] - aabb.min[0];
     float e1 = aabb.max[1] - aabb.min[1];
     float e2 = aabb.max[2] - aabb.min[2];
     return 2.0f * (e0 * e1 + e1 * e2 + e2 * e0);
 }
 
-float mid(AABB const & aabb, std::size_t d) {
+template <typename Vec3fType> inline
+float mid(AABB<Vec3fType> const & aabb, std::size_t d) {
     return (aabb.min[d] + aabb.max[d]) / 2.0f;
 }
 
 constexpr float inf = std::numeric_limits<float>::infinity();
 constexpr float eps = 1e-3;//std::numeric_limits<float>::epsilon();
 
-/* Derived form Tavian Barnes implementation posted in 
+/* Derived form Tavian Barnes implementation posted in
  * http://tavianator.com/fast-branchless-raybounding-box-intersections-part-2-nans/
  * on 23rd March 2015 */
-bool intersect(Ray const & ray, AABB const & aabb, float * tmin_ptr) {
+template <typename Vec3fType> inline
+bool intersect(Ray<Vec3fType> const & ray, AABB<Vec3fType> const & aabb, float * tmin_ptr) {
     float tmin = ray.tmin, tmax = ray.tmax;
-    for (std::size_t i = 0; i < 3; ++i) {
+    for (int i = 0; i < 3; ++i) {
         float t1 = (aabb.min[i] - ray.origin[i]) / ray.dir[i];
         float t2 = (aabb.max[i] - ray.origin[i]) / ray.dir[i];
 
@@ -90,10 +97,11 @@ bool intersect(Ray const & ray, AABB const & aabb, float * tmin_ptr) {
     return tmax >= std::max(tmin, 0.0f);
 }
 
-bool intersect(Ray const & ray, Tri const & tri, float * t_ptr, math::Vec3f * bcoords_ptr) {
-    math::Vec3f v0 = tri.b - tri.a;
-    math::Vec3f v1 = tri.c - tri.a;
-    math::Vec3f normal = v1.cross(v0);
+template <typename Vec3fType> inline
+bool intersect(Ray<Vec3fType> const & ray, Tri<Vec3fType> const & tri, float * t_ptr, Vec3fType * bcoords_ptr) {
+    Vec3fType v0 = tri.b - tri.a;
+    Vec3fType v1 = tri.c - tri.a;
+    Vec3fType normal = v1.cross(v0);
     if (normal.norm() < std::numeric_limits<float>::epsilon()) return false;
     normal.normalize();
 
@@ -103,7 +111,7 @@ bool intersect(Ray const & ray, Tri const & tri, float * t_ptr, math::Vec3f * bc
     float t = -normal.dot(ray.origin - tri.a) / cosine;
 
     if (t < ray.tmin || ray.tmax < t) return false;
-    math::Vec3f v2 = (ray.origin - tri.a) + t * ray.dir;
+    Vec3fType v2 = (ray.origin - tri.a) + t * ray.dir;
 
     /* Derived from the book "Real-Time Collision Detection"
      * by Christer Ericson published by Morgan Kaufmann in 2005 */
@@ -114,7 +122,7 @@ bool intersect(Ray const & ray, Tri const & tri, float * t_ptr, math::Vec3f * bc
     float d21 = v2.dot(v1);
     double denom = d00 * d11 - d01 * d01;
 
-    math::Vec3f bcoords;
+    Vec3fType bcoords;
     bcoords[1] = (d11 * d20 - d01 * d21) / denom;
     bcoords[2] = (d00 * d21 - d01 * d20) / denom;
     bcoords[0] = 1.0f - bcoords[1] - bcoords[2];

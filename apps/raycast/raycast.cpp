@@ -16,6 +16,8 @@
 
 #include <acc/bvh_tree.h>
 
+typedef acc::BVHTree<unsigned int, math::Vec3f> BVHTree;
+
 struct Arguments {
     std::string in_scene;
     std::string image;
@@ -44,7 +46,7 @@ Arguments parse_args(int argc, char **argv) {
     conf.out_prefix = args.get_nth_nonopt(3);
     conf.normals = false;
     conf.depth = false;
-    
+
     for (util::ArgResult const* i = args.next_option();
          i != 0; i = args.next_option()) {
         switch (i->opt->sopt) {
@@ -94,15 +96,14 @@ int main(int argc, char **argv) {
         std::exit(EXIT_FAILURE);
     }
     mesh->ensure_normals(false, true);
-    std::vector<unsigned int> const & mfaces = mesh->get_faces();
-    std::vector<std::size_t> faces(mfaces.begin(), mfaces.end());
+    std::vector<unsigned int> const & faces = mesh->get_faces();
     std::vector<math::Vec3f> const & vertices = mesh->get_vertices();
     std::vector<math::Vec4f> const & colors = mesh->get_vertex_colors();
     std::vector<math::Vec3f> const & normals = mesh->get_vertex_normals();
-    
+
     util::WallTimer timer;
     std::cout << "Building BVH from " << faces.size() / 3 << " faces... " << std::flush;
-    acc::BVHTree bvhtree(faces, vertices);
+    BVHTree bvhtree(faces, vertices);
     std::cout << "done. (Took: " << timer.get_elapsed() << " ms)" << std::endl;
 
     timer.reset();
@@ -126,14 +127,14 @@ int main(int argc, char **argv) {
         #pragma omp parallel for
         for (int y = 0; y < uvmap->height(); ++y) {
             for (int x = 0; x < uvmap->width(); ++x) {
-                acc::Ray ray;
+                BVHTree::Ray ray;
                 ray.origin = origin;
                 math::Vec3f v = invproj * math::Vec3f ((float)x + 0.5f, (float)y + 0.5f, 1.0f);
                 ray.dir = c2w_rot.mult(v.normalized()).normalize();
                 ray.tmin = 0.0f;
                 ray.tmax = std::numeric_limits<float>::infinity();
 
-                acc::BVHTree::Hit hit;
+                BVHTree::Hit hit;
                 if (bvhtree.intersect(ray, &hit)) {
                     math::Vec3f const & n1 = normals[faces[hit.idx * 3 + 0]];
                     math::Vec3f const & n2 = normals[faces[hit.idx * 3 + 1]];
