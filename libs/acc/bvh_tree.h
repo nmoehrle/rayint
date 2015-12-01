@@ -37,13 +37,16 @@ public:
 private:
     static constexpr IdxType NAI = std::numeric_limits<IdxType>::max();
 
+    typedef acc::AABB<Vec3fType> AABB;
+    typedef acc::Tri<Vec3fType> Tri;
+
     struct Node {
         typedef IdxType ID;
         IdxType first;
         IdxType last;
         ID left;
         ID right;
-        AABB<Vec3fType> aabb;
+        AABB aabb;
         Node() : Node(NAI, NAI) {}
         Node(IdxType first, IdxType last)
             : first(first), last(last), left(NAI), right(NAI),
@@ -53,11 +56,8 @@ private:
 
     struct Bin {
         IdxType n;
-        AABB<Vec3fType> aabb;
+        AABB aabb;
     };
-
-    typedef acc::AABB<Vec3fType> AABB;
-    typedef acc::Tri<Vec3fType> Tri;
 
     std::vector<IdxType> indices;
     std::vector<Tri> tris;
