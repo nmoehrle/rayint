@@ -15,8 +15,7 @@
 #include <algorithm>
 #include <atomic>
 #include <thread>
-
-#include <math/vector.h>
+#include <limits>
 
 #include "primitives.h"
 
@@ -36,6 +35,8 @@ public:
     };
 
 private:
+    static constexpr IdxType NAI = std::numeric_limits<IdxType>::max();
+
     struct Node {
         typedef IdxType ID;
         IdxType first;
@@ -43,11 +44,11 @@ private:
         ID left;
         ID right;
         AABB<Vec3fType> aabb;
-        Node() : Node(-1, -1) {}
+        Node() : Node(NAI, NAI) {}
         Node(IdxType first, IdxType last)
-            : first(first), last(last), left(-1), right(-1),
+            : first(first), last(last), left(NAI), right(NAI),
             aabb({Vec3fType(inf), Vec3fType(-inf)}) {}
-        bool is_leaf() const {return left == -1 && right == -1;}
+        bool is_leaf() const {return left == NAI && right == NAI;}
     };
 
     struct Bin {
@@ -105,7 +106,7 @@ void BVHTree<IdxType, Vec3fType>::split(typename Node::ID node,
     typename Node::ID left, right;
     if ((*num_threads -= 1) >= 1) {
         std::tie(left, right) = sbsplit(node, aabbs);
-        if (left != -1 && right != -1) {
+        if (left != NAI && right != NAI) {
             std::thread other(&BVHTree::split, this, left, std::cref(aabbs), num_threads);
             split(right, aabbs, num_threads);
             other.join();
@@ -116,7 +117,7 @@ void BVHTree<IdxType, Vec3fType>::split(typename Node::ID node,
         while (!queue.empty()) {
             typename Node::ID node = queue.back(); queue.pop_back();
             std::tie(left, right) = sbsplit(node, aabbs);
-            if (left != -1 && right != -1) {
+            if (left != NAI && right != NAI) {
                 queue.push_back(left);
                 queue.push_back(right);
             }
@@ -186,7 +187,7 @@ BVHTree<IdxType, Vec3fType>::bsplit(typename Node::ID node_id,
         }
     }
 
-    if (min_cost >= n) return std::make_pair(-1, -1);
+    if (min_cost >= n) return std::make_pair(NAI, NAI);
 
     char d;
     IdxType sidx;
@@ -275,7 +276,7 @@ BVHTree<IdxType, Vec3fType>::ssplit(typename Node::ID node_id, std::vector<AABB>
         }
     }
 
-    if (min_cost >= n) return std::make_pair(-1, -1);
+    if (min_cost >= n) return std::make_pair(NAI, NAI);
 
     char d;
     IdxType i;
