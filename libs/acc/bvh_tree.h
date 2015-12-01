@@ -47,11 +47,6 @@ private:
         ID left;
         ID right;
         AABB aabb;
-        Node() : Node(NAI, NAI) {}
-        Node(IdxType first, IdxType last)
-            : first(first), last(last), left(NAI), right(NAI),
-            aabb({Vec3fType(inf), Vec3fType(-inf)}) {}
-        bool is_leaf() const {return left == NAI && right == NAI;}
     };
 
     struct Bin {
@@ -66,7 +61,11 @@ private:
     std::vector<Node> nodes;
     typename Node::ID create_node(IdxType first, IdxType last) {
         typename Node::ID node_id = num_nodes++;
-        nodes[node_id] = Node(first, last);
+        Node & node = nodes[node_id];
+        node.first = first;
+        node.last = last;
+        node.aabb.min = Vec3fType(inf);
+        node.aabb.max = Vec3fType(-inf);
         return node_id;
     }
 
@@ -306,9 +305,7 @@ BVHTree<IdxType, Vec3fType>::BVHTree(std::vector<IdxType> const & faces,
     nodes.resize(2 * num_faces - 1);
 
     /* Initialize root node. */
-    nodes[num_nodes++] = Node(0, num_faces);
-
-    Node & root = nodes[0];
+    Node & root = nodes[create_node(0, num_faces)];
     for (std::size_t i = 0; i < aabbs.size(); ++i) {
         ttris[i].a = vertices[faces[i * 3 + 0]];
         ttris[i].b = vertices[faces[i * 3 + 1]];
@@ -361,7 +358,7 @@ BVHTree<IdxType, Vec3fType>::intersect(Ray ray, Hit * hit_ptr) const {
     while (!s.empty()) {
         typename Node::ID node_id = s.top(); s.pop();
         Node const & node = nodes[node_id];
-        if (!node.is_leaf()) {
+        if (node.left != NAI && node.right != NAI) {
             float tmin_left, tmin_right;
             bool left = acc::intersect(ray, nodes[node.left].aabb, &tmin_left);
             bool right = acc::intersect(ray, nodes[node.right].aabb, &tmin_right);
