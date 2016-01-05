@@ -81,6 +81,9 @@ private:
     bool intersect(Ray const & ray, typename Node::ID node_id, Hit * hit) const;
 
 public:
+    template <class C>
+    static C convert(BVHTree const & bvh_tree);
+
     /* Constructs the BVH tree using the Surface Area Heuristic as
      * published in
      * "On fast Construction of SAH-based Bounding Volume Hierarchies"
