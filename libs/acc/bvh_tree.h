@@ -64,6 +64,8 @@ private:
         Node & node = nodes[node_id];
         node.first = first;
         node.last = last;
+        node.left = NAI;
+        node.right = NAI;
         node.aabb.min = Vec3fType(inf);
         node.aabb.max = Vec3fType(-inf);
         return node_id;
