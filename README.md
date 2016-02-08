@@ -7,7 +7,7 @@ intersection tests or nearest neighbor searches.
 As an example application a simple raycasting app for
 [MVE](https://github.com/simonfuhrmann/mve) scenes is provided.
 
-The application was inspired by
+This library was inspired by
 [coldet](http://sourceforge.net/projects/coldet/).
 
 License
