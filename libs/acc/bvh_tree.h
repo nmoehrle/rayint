@@ -24,6 +24,9 @@ ACC_NAMESPACE_BEGIN
 template <typename IdxType, typename Vec3fType>
 class BVHTree {
 public:
+    typedef std::shared_ptr<BVHTree<IdxType, Vec3fType> > Ptr;
+    typedef std::shared_ptr<const BVHTree<IdxType, Vec3fType> > ConstPtr;
+
     typedef acc::Ray<Vec3fType> Ray;
     struct Hit {
         /* Parameter of the ray (distance of hit location). */
@@ -83,6 +86,13 @@ private:
     bool intersect(Ray const & ray, typename Node::ID node_id, Hit * hit) const;
 
 public:
+    static
+    BVHTree::Ptr create(std::vector<IdxType> const & faces,
+        std::vector<Vec3fType> const & vertices,
+        int max_threads = std::thread::hardware_concurrency()) {
+        return Ptr(new BVHTree(faces, vertices, max_threads));
+    }
+
     template <class C>
     static C convert(BVHTree const & bvh_tree);
 
@@ -95,7 +105,7 @@ public:
      * a vector containing the 3D positions. */
     BVHTree(std::vector<IdxType> const & faces,
         std::vector<Vec3fType> const & vertices,
-        int max_threads = 2 * std::thread::hardware_concurrency());
+        int max_threads = std::thread::hardware_concurrency());
 
     bool intersect(Ray ray, Hit * hit_ptr) const;
 };
