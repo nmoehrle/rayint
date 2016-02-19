@@ -78,7 +78,7 @@ float mid(AABB<Vec3fType> const & aabb, std::size_t d) {
 }
 
 constexpr float inf = std::numeric_limits<float>::infinity();
-constexpr float eps = 1e-3;//std::numeric_limits<float>::epsilon();
+constexpr float eps = 1e-3f;//std::numeric_limits<float>::epsilon();
 
 /* Derived form Tavian Barnes implementation posted in
  * http://tavianator.com/fast-branchless-raybounding-box-intersections-part-2-nans/

@@ -35,7 +35,7 @@ public:
     };
 
 private:
-    static constexpr IdxType NAI = std::numeric_limits<IdxType>::max();
+    #define NAI std::numeric_limits<IdxType>::max()
 
     typedef acc::AABB<Vec3fType> AABB;
     typedef acc::Tri<Vec3fType> Tri;

@@ -1,0 +1,3 @@
+[submodule "elibs/smve"]
+	path = elibs/smve
+	url = https://github.com/nmoehrle/mve.git
