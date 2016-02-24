@@ -10,11 +10,14 @@ workspace "rayint"
         targetdir "build/debug"
         defines {"Symbols"}
 
+    os.execute("git submodule init")
+    os.execute("git submodule update")
+
     project "raycast"
         kind "ConsoleApp"
         language "C++"
         files {"apps/raycast/*.h", "apps/raycast/*.cpp"}
-        includedirs {"libs", "../mve/libs"}
+        includedirs {"libs", "elibs/mve/libs"}
 
-        libdirs {"../mve/libs/**/", os.findlib("png"), os.findlib("jpeg"), os.findlib("tiff")}
+        libdirs {"elibs/mve/libs/**/", os.findlib("png"), os.findlib("jpeg"), os.findlib("tiff")}
         links {"mve", "mve_util", "jpeg", "png", "tiff"}
