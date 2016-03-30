@@ -9,6 +9,7 @@
 #ifndef ACC_BVHTREE_HEADER
 #define ACC_BVHTREE_HEADER
 
+#include <array>
 #include <deque>
 #include <stack>
 #include <cassert>
@@ -87,7 +88,7 @@ private:
 
 public:
     static
-    BVHTree::Ptr create(std::vector<IdxType> const & faces,
+    Ptr create(std::vector<IdxType> const & faces,
         std::vector<Vec3fType> const & vertices,
         int max_threads = std::thread::hardware_concurrency()) {
         return Ptr(new BVHTree(faces, vertices, max_threads));
