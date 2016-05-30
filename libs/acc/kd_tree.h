@@ -15,6 +15,8 @@
 
 #include <math/vector.h>
 
+#include "defines.h"
+
 ACC_NAMESPACE_BEGIN
 
 bool compare(std::pair<std::size_t, float> a, std::pair<std::size_t, float> b) {
@@ -45,13 +47,16 @@ public:
     KDTree(std::vector<math::Vector<float, K> > const & points);
 
     std::pair<std::size_t, float>
-    find_nn(math::Vector<float, K> point) const;
+    find_nn(math::Vector<float, K> point,
+        float max_dist = std::numeric_limits<float>::infinity()) const;
 
     std::vector<std::pair<std::size_t, float> >
-    find_nns(math::Vector<float, K> point, std::size_t n) const;
+    find_nns(math::Vector<float, K> point, std::size_t n,
+        float max_dist = std::numeric_limits<float>::infinity()) const;
 };
 
-KDTree::~KDTree() {
+template <uint16_t K>
+KDTree<K>::~KDTree() {
     std::queue<Node*> q;
     q.push(root);
     while (!q.empty()) {
@@ -64,7 +69,8 @@ KDTree::~KDTree() {
     }
 };
 
-KDTree::KDTree(std::vector<math::Vector<float, K> > const & points)
+template <uint16_t K>
+KDTree<K>::KDTree(std::vector<math::Vector<float, K> > const & points)
     : points(points) {
     std::vector<std::size_t> indices(points.size());
     for (std::size_t i = 0; i < indices.size(); ++i)
@@ -95,51 +101,54 @@ KDTree::KDTree(std::vector<math::Vector<float, K> > const & points)
     }
 }
 
+template <uint16_t K>
 std::pair<std::size_t, float>
-KDTree::find_nn(math::Vector<float, K> point) const {
-    return find_nns(point, 1)[0];
+KDTree<K>::find_nn(math::Vector<float, K> point, float max_dist) const {
+    return find_nns(point, 1, max_dist)[0];
 }
 
+template <uint16_t K>
 std::vector<std::pair<std::size_t, float> >
-KDTree::find_nns(math::Vector<float, K> point, std::size_t n) const {
-    float sdist = std::numeric_limits<float>::max();
-    std::pair<std::size_t, float> nn = std::make_pair(-1, sdist);
+KDTree<K>::find_nns(math::Vector<float, K> point, std::size_t n, float max_dist) const {
+
+    std::pair<std::size_t, float> nn = std::make_pair(-1, max_dist);
     std::vector<std::pair<std::size_t, float> > nns(n, nn);
 
     std::stack<std::pair<Node const*, bool> > s;
-    s.push(std::make_pair(root, true));
+    s.emplace(root, true);
     while (!s.empty()) {
-        Node const *node = s.top().first;
-        bool down = s.top().second;
+        Node const *node;
+        bool down;
+        std::tie(node, down) = s.top();
         s.pop();
+
         if (node == nullptr) continue;
 
         float diff = point[node->d] - points[node->id][node->d];
         if (down) {
             float dist = (point - points[node->id]).norm();
-            if (dist < sdist) {
-                nn = std::make_pair(node->id, dist);
-                nns.push_back(nn);
+            if (dist < max_dist) {
+                nns.emplace_back(node->id, dist);
                 std::sort(nns.begin(), nns.end(), compare);
                 nns.pop_back();
-                sdist = nns.back().second;
+                max_dist = nns.back().second;
             }
 
             if (node->is_leaf()) continue;
 
-            s.push(std::make_pair(node, false));
+            s.emplace(node, false);
             if (diff < 0.0f) {
-                s.push(std::make_pair(node->left, true));
+                s.emplace(node->left, true);
             } else {
-                s.push(std::make_pair(node->right, true));
+                s.emplace(node->right, true);
             }
         } else {
-            if (std::abs(diff) >= sdist) continue;
+            if (std::abs(diff) >= max_dist) continue;
 
             if (diff < 0.0f) {
-                s.push(std::make_pair(node->right, true));
+                s.emplace(node->right, true);
             } else {
-                s.push(std::make_pair(node->left, true));
+                s.emplace(node->left, true);
             }
         }
     }
