@@ -13,6 +13,8 @@
 #include <stack>
 #include <limits>
 #include <atomic>
+#include <thread>
+#include <algorithm>
 
 #include <math/vector.h>
 
@@ -51,8 +53,14 @@ private:
         return node_id;
     }
 
+    std::pair<typename Node::ID, typename Node::ID>
+    ssplit(typename Node::ID node_id, std::vector<IdxType> * indices);
+
+    void split(typename Node::ID node_id, std::vector<IdxType> * indices,
+        std::atomic<int> * num_threads);
 public:
-    KDTree(std::vector<math::Vector<float, K> > const & vertices);
+    KDTree(std::vector<math::Vector<float, K> > const & vertices,
+        int max_threads = 2 * std::thread::hardware_concurrency());
 
     std::pair<IdxType, float>
     find_nn(math::Vector<float, K> point,
@@ -64,7 +72,8 @@ public:
 };
 
 template <uint16_t K, typename IdxType>
-KDTree<K, IdxType>::KDTree(std::vector<math::Vector<float, K> > const & vertices)
+KDTree<K, IdxType>::KDTree(std::vector<math::Vector<float, K> > const & vertices,
+    int max_threads)
     : vertices(vertices), num_nodes(0) {
 
     std::size_t num_vertices = vertices.size();
@@ -75,29 +84,56 @@ KDTree<K, IdxType>::KDTree(std::vector<math::Vector<float, K> > const & vertices
         indices[i] = i;
     }
 
-    std::deque<typename Node::ID> queue;
-    queue.push_back(create_node(0, 0, num_vertices));
-    while (!queue.empty()) {
-        typename Node::ID node_id = queue.front(); queue.pop_front();
-        Node & node = nodes[node_id];
-        decltype(K) d = node.d;
-        std::sort(&indices[node.first], &indices[node.last],
-            [&vertices, d] (IdxType a, IdxType b) -> bool {
-                return vertices[a][d] < vertices[b][d];
-            }
-        );
-        d = (d + 1) % K;
-        IdxType mid = (node.last + node.first) / 2;
-        node.vertex_id = indices[mid];
-        if (mid - node.first > 0) {
-            node.left = create_node(d, node.first, mid);
-            queue.push_back(node.left);
+    std::atomic<int> num_threads(max_threads);
+    split(create_node(0, 0, num_vertices), &indices, &num_threads);
+}
+
+template <uint16_t K, typename IdxType>
+void KDTree<K, IdxType>::split(typename Node::ID node_id, std::vector<IdxType> * indices, std::atomic<int> * num_threads) {
+    typename Node::ID left, right;
+    if ((*num_threads -= 1) >= 1) {
+        std::tie(left, right) = ssplit(node_id, indices);
+        if (left != NAI && right != NAI) {
+            std::thread other(&KDTree::split, this, left, indices, num_threads);
+            split(right, indices, num_threads);
+            other.join();
+        } else {
+            if (left != NAI) split(left, indices, num_threads);
+            if (right != NAI) split(right, indices, num_threads);
         }
-        if (node.last - (mid + 1) > 0) {
-            node.right = create_node(d, mid + 1, node.last);
-            queue.push_back(node.right);
+    } else {
+        std::deque<typename Node::ID> queue;
+        queue.push_back(node_id);
+        while (!queue.empty()) {
+            typename Node::ID node_id = queue.front(); queue.pop_front();
+            std::tie(left, right) = ssplit(node_id, indices);
+            if (left != NAI) queue.push_back(left);
+            if (right != NAI) queue.push_back(right);
         }
     }
+    *num_threads += 1;
+}
+
+template <uint16_t K, typename IdxType>
+std::pair<typename KDTree<K, IdxType>::Node::ID, typename KDTree<K, IdxType>::Node::ID>
+KDTree<K, IdxType>::ssplit(typename Node::ID node_id, std::vector<IdxType> * indices) {
+    Node & node = nodes[node_id];
+    decltype(K) d = node.d;
+    std::sort(indices->data() + node.first, indices->data() + node.last,
+        [this, d] (IdxType a, IdxType b) -> bool {
+            return vertices[a][d] < vertices[b][d];
+        }
+    );
+    d = (d + 1) % K;
+    IdxType mid = (node.last + node.first) / 2;
+    node.vertex_id = indices->at(mid);
+    if (mid - node.first > 0) {
+        node.left = create_node(d, node.first, mid);
+    }
+    if (node.last - (mid + 1) > 0) {
+        node.right = create_node(d, mid + 1, node.last);
+    }
+    return std::make_pair(node.left, node.right);
 }
 
 template <uint16_t K, typename IdxType>
