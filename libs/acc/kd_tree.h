@@ -12,6 +12,7 @@
 #include <queue>
 #include <stack>
 #include <limits>
+#include <atomic>
 
 #include <math/vector.h>
 
@@ -19,136 +20,140 @@
 
 ACC_NAMESPACE_BEGIN
 
-bool compare(std::pair<std::size_t, float> a, std::pair<std::size_t, float> b) {
-    return a.second < b.second;
-}
-
-template <uint16_t K>
+template <uint16_t K, typename IdxType = unsigned>
 class KDTree {
+public:
+    #define NAI std::numeric_limits<IdxType>::max()
 private:
-    std::vector<math::Vector<float, K> > const & points;
+
+    std::vector<math::Vector<float, K> > const & vertices;
     struct Node {
+        typedef IdxType ID;
         decltype(K) d;
-        std::size_t first;
-        std::size_t last;
-        std::size_t id;
-        Node* left;
-        Node* right;
-        Node(decltype(K) d, std::size_t first, std::size_t last)
-            : d(d), first(first), last(last), left(nullptr), right(nullptr) {}
-        bool is_leaf() const {return left == nullptr && right == nullptr;}
+        IdxType first;
+        IdxType last;
+        IdxType vertex_id;
+        Node::ID left;
+        Node::ID right;
     };
 
-    Node *root;
+    std::atomic<IdxType> num_nodes;
+    std::vector<Node> nodes;
+    typename Node::ID create_node(decltype(K) d, IdxType first, IdxType last) {
+        typename Node::ID node_id = num_nodes++;
+        Node & node = nodes[node_id];
+        node.first = first;
+        node.last = last;
+        node.left = NAI;
+        node.right = NAI;
+        node.vertex_id = NAI;
+        node.d = d;
+        return node_id;
+    }
 
 public:
-    ~KDTree();
+    KDTree(std::vector<math::Vector<float, K> > const & vertices);
 
-    KDTree(std::vector<math::Vector<float, K> > const & points);
-
-    std::pair<std::size_t, float>
+    std::pair<IdxType, float>
     find_nn(math::Vector<float, K> point,
         float max_dist = std::numeric_limits<float>::infinity()) const;
 
-    std::vector<std::pair<std::size_t, float> >
+    std::vector<std::pair<IdxType, float> >
     find_nns(math::Vector<float, K> point, std::size_t n,
         float max_dist = std::numeric_limits<float>::infinity()) const;
 };
 
-template <uint16_t K>
-KDTree<K>::~KDTree() {
-    std::queue<Node*> q;
-    q.push(root);
-    while (!q.empty()) {
-        Node *node = q.front(); q.pop();
-        if (node == nullptr) continue;
+template <uint16_t K, typename IdxType>
+KDTree<K, IdxType>::KDTree(std::vector<math::Vector<float, K> > const & vertices)
+    : vertices(vertices), num_nodes(0) {
 
-        q.push(node->left);
-        q.push(node->right);
-        delete node;
-    }
-};
+    std::size_t num_vertices = vertices.size();
+    nodes.resize(num_vertices);
 
-template <uint16_t K>
-KDTree<K>::KDTree(std::vector<math::Vector<float, K> > const & points)
-    : points(points) {
-    std::vector<std::size_t> indices(points.size());
-    for (std::size_t i = 0; i < indices.size(); ++i)
+    std::vector<IdxType> indices(num_vertices);
+    for (std::size_t i = 0; i < indices.size(); ++i) {
         indices[i] = i;
-    root = new Node(0, 0, indices.size());
+    }
 
-    std::queue<Node*> q;
-    q.push(root);
-    while (!q.empty()) {
-        Node *node = q.front(); q.pop();
-        decltype(K) d = node->d;
-        std::sort(&indices[node->first], &indices[node->last],
-            [&points, d] (std::size_t a, std::size_t b) -> bool {
-                return points[a][d] < points[b][d];
+    std::deque<typename Node::ID> queue;
+    queue.push_back(create_node(0, 0, num_vertices));
+    while (!queue.empty()) {
+        typename Node::ID node_id = queue.front(); queue.pop_front();
+        Node & node = nodes[node_id];
+        decltype(K) d = node.d;
+        std::sort(&indices[node.first], &indices[node.last],
+            [&vertices, d] (IdxType a, IdxType b) -> bool {
+                return vertices[a][d] < vertices[b][d];
             }
         );
         d = (d + 1) % K;
-        std::size_t mid = (node->last + node->first) / 2;
-        node->id = indices[mid];
-        if (mid - node->first > 0) {
-            node->left = new Node(d, node->first, mid);
-            q.push(node->left);
+        IdxType mid = (node.last + node.first) / 2;
+        node.vertex_id = indices[mid];
+        if (mid - node.first > 0) {
+            node.left = create_node(d, node.first, mid);
+            queue.push_back(node.left);
         }
-        if (node->last - (mid + 1) > 0) {
-            node->right = new Node(d, mid + 1, node->last);
-            q.push(node->right);
+        if (node.last - (mid + 1) > 0) {
+            node.right = create_node(d, mid + 1, node.last);
+            queue.push_back(node.right);
         }
     }
 }
 
-template <uint16_t K>
-std::pair<std::size_t, float>
-KDTree<K>::find_nn(math::Vector<float, K> point, float max_dist) const {
+template <uint16_t K, typename IdxType>
+std::pair<IdxType, float>
+KDTree<K, IdxType>::find_nn(math::Vector<float, K> point, float max_dist) const {
     return find_nns(point, 1, max_dist)[0];
 }
 
-template <uint16_t K>
-std::vector<std::pair<std::size_t, float> >
-KDTree<K>::find_nns(math::Vector<float, K> point, std::size_t n, float max_dist) const {
+template <uint16_t K, typename IdxType>
+std::vector<std::pair<IdxType, float> >
+KDTree<K, IdxType>::find_nns(math::Vector<float, K> vertex, std::size_t n, float max_dist) const {
 
-    std::pair<std::size_t, float> nn = std::make_pair(-1, max_dist);
-    std::vector<std::pair<std::size_t, float> > nns(n, nn);
+    std::pair<IdxType, float> nn = std::make_pair(NAI, max_dist);
+    std::vector<std::pair<IdxType, float> > nns(n, nn);
 
-    std::stack<std::pair<Node const*, bool> > s;
-    s.emplace(root, true);
+    std::stack<std::pair<typename Node::ID, bool> > s;
+    s.emplace(0, true);
     while (!s.empty()) {
-        Node const *node;
+        typename Node::ID node_id;
         bool down;
-        std::tie(node, down) = s.top();
+        std::tie(node_id, down) = s.top();
         s.pop();
 
-        if (node == nullptr) continue;
+        if (node_id == NAI) continue;
 
-        float diff = point[node->d] - points[node->id][node->d];
+        Node const & node = nodes[node_id];
+
+        float diff = vertex[node.d] - vertices[node.vertex_id][node.d];
         if (down) {
-            float dist = (point - points[node->id]).norm();
+            float dist = (vertex - vertices[node.vertex_id]).norm();
             if (dist < max_dist) {
-                nns.emplace_back(node->id, dist);
-                std::sort(nns.begin(), nns.end(), compare);
+                nns.emplace_back(node.vertex_id, dist);
+                std::sort(nns.begin(), nns.end(),
+                    [] (std::pair<IdxType, float> a, std::pair<IdxType, float> b) -> bool {
+                        return a.second < b.second;
+                    }
+                );
                 nns.pop_back();
                 max_dist = nns.back().second;
             }
 
-            if (node->is_leaf()) continue;
+            if (node.left == NAI && node.right == NAI) continue;
 
-            s.emplace(node, false);
+            s.emplace(node_id, false);
             if (diff < 0.0f) {
-                s.emplace(node->left, true);
+                s.emplace(node.left, true);
             } else {
-                s.emplace(node->right, true);
+                s.emplace(node.right, true);
             }
         } else {
             if (std::abs(diff) >= max_dist) continue;
 
             if (diff < 0.0f) {
-                s.emplace(node->right, true);
+                s.emplace(node.right, true);
             } else {
-                s.emplace(node->left, true);
+                s.emplace(node.left, true);
             }
         }
     }
