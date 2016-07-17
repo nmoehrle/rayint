@@ -16,13 +16,17 @@
 
 #include <acc/bvh_tree.h>
 
-typedef acc::BVHTree<unsigned int, math::Vec3f> BVHTree;
+typedef unsigned int uint;
+
+typedef acc::BVHTree<uint, math::Vec3f> BVHTree;
 
 struct Arguments {
     std::string in_scene;
-    std::string image;
     std::string in_mesh;
     std::string out_prefix;
+
+    uint width = 1920;
+    uint height = 1080;
 
     bool normals;
     bool depth;
@@ -31,9 +35,9 @@ struct Arguments {
 Arguments parse_args(int argc, char **argv) {
     util::Arguments args;
     args.set_exit_on_error(true);
-    args.set_nonopt_maxnum(4);
-    args.set_nonopt_minnum(4);
-    args.set_usage("Usage: " + std::string(argv[0]) + " [OPTS] IN_SCENE IMAGE IN_MESH OUT_PREFIX");
+    args.set_nonopt_maxnum(3);
+    args.set_nonopt_minnum(3);
+    args.set_usage("Usage: " + std::string(argv[0]) + " [OPTS] IN_SCENE IN_MESH OUT_PREFIX");
     args.set_description("TODO");
     //args.add_option('n', "normal-map", false, "write out normal map (OUT_PREFIX-normals) [false]");
     //args.add_option('d', "depth-map", false, "write out depth map (OUT_PREFIX-depth) [false]");
@@ -41,9 +45,8 @@ Arguments parse_args(int argc, char **argv) {
 
     Arguments conf;
     conf.in_scene = args.get_nth_nonopt(0);
-    conf.image = args.get_nth_nonopt(1);
-    conf.in_mesh = args.get_nth_nonopt(2);
-    conf.out_prefix = args.get_nth_nonopt(3);
+    conf.in_mesh = args.get_nth_nonopt(1);
+    conf.out_prefix = args.get_nth_nonopt(2);
     conf.normals = false;
     conf.depth = false;
 
@@ -59,13 +62,13 @@ Arguments parse_args(int argc, char **argv) {
     return conf;
 }
 int main(int argc, char **argv) {
-    Arguments conf = parse_args(argc, argv);
+    Arguments args = parse_args(argc, argv);
 
     mve::TriangleMesh::Ptr mesh;
     try {
-        mesh = mve::geom::load_ply_mesh(conf.in_mesh);
+        mesh = mve::geom::load_ply_mesh(args.in_mesh);
     } catch (std::exception& e) {
-        std::cerr << "\tCould not load mesh: "<< e.what() << std::endl;
+        std::cerr << "\tCould not load mesh: " << e.what() << std::endl;
         std::exit(EXIT_FAILURE);
     }
     if (!mesh->has_vertex_colors()) {
@@ -75,7 +78,7 @@ int main(int argc, char **argv) {
 
     mve::Scene::Ptr scene;
     try {
-        scene = mve::Scene::create(conf.in_scene);
+        scene = mve::Scene::create(args.in_scene);
     } catch (std::exception& e) {
         std::cerr << "Could not open scene: " << e.what() << std::endl;
         std::exit(EXIT_FAILURE);
@@ -85,18 +88,18 @@ int main(int argc, char **argv) {
         mve::Scene::ViewList const & aviews = scene->get_views();
         views.reserve(aviews.size());
         for (mve::View::Ptr view : aviews) {
-            if (view == NULL) continue;
-            if (!view->has_image(conf.image)) continue;
+            if (view == nullptr) continue;
+            if (!view->is_camera_valid()) continue;
             views.push_back(view);
         }
     }
 
     if (views.size() == 0) {
-        std::cerr << "No view contained the specified image" << std::endl;
+        std::cerr << "Scene does not contain valid views." << std::endl;
         std::exit(EXIT_FAILURE);
     }
     mesh->ensure_normals(false, true);
-    std::vector<unsigned int> const & faces = mesh->get_faces();
+    std::vector<uint> const & faces = mesh->get_faces();
     std::vector<math::Vec3f> const & vertices = mesh->get_vertices();
     std::vector<math::Vec4f> const & colors = mesh->get_vertex_colors();
     std::vector<math::Vec3f> const & normals = mesh->get_vertex_normals();
@@ -111,18 +114,16 @@ int main(int argc, char **argv) {
     for (mve::View::Ptr view : views) {
         mve::CameraInfo const & camera = view->get_camera();
 
-        mve::View::ImageProxy const * proxy = view->get_image_proxy(conf.image);
-
         math::Vec3f origin;
         camera.fill_camera_pos(*origin);
         math::Matrix3f invproj;
-        camera.fill_inverse_calibration(*invproj, proxy->width, proxy->height);
+        camera.fill_inverse_calibration(*invproj, args.width, args.height);
         math::Matrix3f c2w_rot;
         camera.fill_cam_to_world_rot(*c2w_rot);
 
-        mve::ByteImage::Ptr uvmap = mve::ByteImage::create(proxy->width, proxy->height, 3);
-        mve::ByteImage::Ptr normalmap = mve::ByteImage::create(proxy->width, proxy->height, 3);
-        mve::FloatImage::Ptr depthmap = mve::FloatImage::create(proxy->width, proxy->height, 1);
+        mve::ByteImage::Ptr uvmap = mve::ByteImage::create(args.width, args.height, 3);
+        mve::ByteImage::Ptr normalmap = mve::ByteImage::create(args.width, args.height, 3);
+        mve::FloatImage::Ptr depthmap = mve::FloatImage::create(args.width, args.height, 1);
 
         #pragma omp parallel for
         for (int y = 0; y < uvmap->height(); ++y) {
@@ -154,9 +155,9 @@ int main(int argc, char **argv) {
             }
         }
 
-        view->set_image(uvmap, conf.out_prefix + "-uv");
-        view->set_image(normalmap, conf.out_prefix + "-normals");
-        view->set_image(depthmap, conf.out_prefix + "-depth");
+        view->set_image(uvmap, args.out_prefix + "-uv");
+        view->set_image(normalmap, args.out_prefix + "-normals");
+        view->set_image(depthmap, args.out_prefix + "-depth");
         auto res = std::async(std::launch::async, [view] {view->save_view();});
     }
     std::cout << "done. (Took: " << timer.get_elapsed() << " ms)" << std::endl;
