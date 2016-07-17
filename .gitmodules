@@ -1,3 +1,6 @@
 [submodule "elibs/mve"]
 	path = elibs/mve
 	url = https://github.com/nmoehrle/mve.git
+[submodule "libs/acc"]
+	path = libs/acc
+	url = https://github.com/nmoehrle/libacc

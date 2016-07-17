@@ -1,10 +1,15 @@
 workspace "rayint"
     configurations {"debug", "release", "profile"}
     flags {"C++11"}
+    location "build"
 
     configuration "release"
         targetdir "build/release"
+        buildoptions {"-fopenmp"}
         optimize "On"
+
+    filter {"system:linux"}
+        linkoptions {"-pthread"}
 
     configuration "debug"
         targetdir "build/debug"
@@ -19,5 +24,5 @@ workspace "rayint"
         files {"apps/raycast/*.h", "apps/raycast/*.cpp"}
         includedirs {"libs", "elibs/mve/libs"}
 
-        libdirs {"elibs/mve/libs/**/", os.findlib("png"), os.findlib("jpeg"), os.findlib("tiff")}
-        links {"mve", "mve_util", "jpeg", "png", "tiff"}
+        libdirs {"elibs/mve/libs/**/"}
+        links {"gomp", "mve", "mve_util", "jpeg", "png", "tiff"}
