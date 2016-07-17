@@ -94,7 +94,9 @@ int main(int argc, char **argv) {
         }
     }
 
-    if (views.size() == 0) {
+    std::size_t num_views = views.size();
+
+    if (num_views == 0) {
         std::cerr << "Scene does not contain valid views." << std::endl;
         std::exit(EXIT_FAILURE);
     }
@@ -108,6 +110,9 @@ int main(int argc, char **argv) {
     std::cout << "Building BVH from " << faces.size() / 3 << " faces... " << std::flush;
     BVHTree bvhtree(faces, vertices);
     std::cout << "done. (Took: " << timer.get_elapsed() << " ms)" << std::endl;
+
+    std::vector<std::future<void> > futures;
+    futures.reserve(num_views);
 
     timer.reset();
     std::cout << "Raycasting... " << std::flush;
@@ -158,7 +163,10 @@ int main(int argc, char **argv) {
         view->set_image(uvmap, args.out_prefix + "-uv");
         view->set_image(normalmap, args.out_prefix + "-normals");
         view->set_image(depthmap, args.out_prefix + "-depth");
-        auto res = std::async(std::launch::async, [view] {view->save_view();});
+        futures.push_back(std::async(std::launch::async, [view] {
+            view->save_view();
+            view->cache_cleanup();
+        }));
     }
     std::cout << "done. (Took: " << timer.get_elapsed() << " ms)" << std::endl;
 
