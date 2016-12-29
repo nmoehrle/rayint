@@ -9,12 +9,13 @@
 #ifndef ACC_BVHTREE_HEADER
 #define ACC_BVHTREE_HEADER
 
+#include <array>
 #include <deque>
 #include <stack>
-#include <cassert>
-#include <algorithm>
 #include <atomic>
 #include <thread>
+#include <cassert>
+#include <algorithm>
 
 #include <math/vector.h>
 
