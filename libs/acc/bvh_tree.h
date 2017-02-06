@@ -111,6 +111,8 @@ public:
     bool intersect(Ray ray, Hit * hit_ptr) const;
 };
 
+template <typename IdxType, typename Vec3fType>
+constexpr IdxType BVHTree<IdxType, Vec3fType>::NAI;
 
 #define NUM_BINS 64
 template <typename IdxType, typename Vec3fType>
